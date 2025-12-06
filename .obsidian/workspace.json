@@ -1,20 +1,52 @@
 {
   "main": {
-    "id": "cabe3bf0d49637d1",
+    "id": "b0fab2e4a3175ceb",
     "type": "split",
     "children": [
       {
-        "id": "f3b9e248c37a2148",
+        "id": "50fb73ae607559a4",
         "type": "tabs",
         "children": [
           {
-            "id": "58b0092fd2c713c9",
+            "id": "790e56f46ab479a8",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "README.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "新标签页"
+              "title": "README"
+            }
+          },
+          {
+            "id": "11b5f776585501fd",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "常用数据集内容总结：.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "常用数据集内容总结："
+            }
+          },
+          {
+            "id": "dfe76d0b7b9dc108",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "相关论文方法内容：.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "相关论文方法内容："
             }
           }
         ]
@@ -23,15 +55,15 @@
     "direction": "vertical"
   },
   "left": {
-    "id": "454f88bf3dfe65ff",
+    "id": "dc0931a456e66c11",
     "type": "split",
     "children": [
       {
-        "id": "8eddd7241e7ad94f",
+        "id": "fa58f0947f07f4ef",
         "type": "tabs",
         "children": [
           {
-            "id": "775310391c4f4f64",
+            "id": "5a3abf3af459498e",
             "type": "leaf",
             "state": {
               "type": "file-explorer",
@@ -44,7 +76,7 @@
             }
           },
           {
-            "id": "f7d131b81aa44c55",
+            "id": "22c225fbb7906709",
             "type": "leaf",
             "state": {
               "type": "search",
@@ -61,7 +93,7 @@
             }
           },
           {
-            "id": "295e2e7ec9932fa3",
+            "id": "353c27f611c57247",
             "type": "leaf",
             "state": {
               "type": "bookmarks",
@@ -77,19 +109,20 @@
     "width": 300
   },
   "right": {
-    "id": "fe588f2e367f7446",
+    "id": "a92c2aa85f55c6a2",
     "type": "split",
     "children": [
       {
-        "id": "a5486a6e3ef481c5",
+        "id": "b2fb5a1efc0c3da1",
         "type": "tabs",
         "children": [
           {
-            "id": "479a607203530361",
+            "id": "6f3f4037858dadd5",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
+                "file": "README.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -99,24 +132,25 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "反向链接"
+              "title": "README 的反向链接列表"
             }
           },
           {
-            "id": "e217d5381a4e4a4d",
+            "id": "c1740ddbd7913a20",
             "type": "leaf",
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "README.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "出链"
+              "title": "README 的出链列表"
             }
           },
           {
-            "id": "5acbf61efb925f51",
+            "id": "caee5d1fa676de40",
             "type": "leaf",
             "state": {
               "type": "tag",
@@ -131,7 +165,7 @@
             }
           },
           {
-            "id": "9abd62d8c0a514ff",
+            "id": "a504a5563e2a4b4d",
             "type": "leaf",
             "state": {
               "type": "all-properties",
@@ -145,17 +179,18 @@
             }
           },
           {
-            "id": "0e0eb1695c2f28f0",
+            "id": "18ae8548ab9c08ba",
             "type": "leaf",
             "state": {
               "type": "outline",
               "state": {
+                "file": "README.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "大纲"
+              "title": "README 的大纲"
             }
           }
         ]
@@ -176,6 +211,14 @@
       "bases:创建新数据库": false
     }
   },
-  "active": "58b0092fd2c713c9",
-  "lastOpenFiles": []
+  "active": "790e56f46ab479a8",
+  "lastOpenFiles": [
+    "常用数据集内容总结：.md",
+    "相关论文方法内容：.md",
+    "attachments/Pasted image 20251206195548.png",
+    "attachments/Pasted image 20251206182037.png",
+    "README.md",
+    "attachments/Pasted image 20251206110121.png",
+    "attachments"
+  ]
 }
