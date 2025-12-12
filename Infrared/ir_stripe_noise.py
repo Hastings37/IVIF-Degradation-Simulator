@@ -1,35 +1,77 @@
-import cv2
-import os
 import numpy as np
+import cv2
 
-def add_stripe(image_path):
-    im = cv2.imread(image_path) # BGR HWC  unit8 默认是按照RGB这样的格式读取到的；
+# ================= 1. 全局配置区域 =================
 
-    #stdN_G = np.random.uniform(3, 5)  # 控制高斯噪声强度
-    #noise_G= np.random.normal(0, stdN_G, im.shape) #需要条纹噪声时，可以不使用
+# 采样概率分布 (符合正态分布设定)
+LEVEL_KEYS = ["clean", "slight", "moderate", "severe", "extreme"]
+LEVEL_PROBS = [0.17, 0.22, 0.33, 0.28, 0.0]
 
-    beta = np.random.uniform(5, 7)  # 控制条纹噪声强度
-    noise_col = np.random.normal(0, beta, im.shape[1]) # W Infrared 中为竖直的状态；
-    # 服从 0 beta 的高斯分布并且从 宽度方向上生成一维的噪声；
+# 统一参数字典 (仅展示条纹噪声相关参数)
+DEGRADATION_LEVELS = {
+    "clean": {"stripe_beta": 0},  # 无条纹
+    "slight": {"stripe_beta": 2},  # 几乎不可见
+    "moderate": {"stripe_beta": 6},  # 明显可见 (原设定)
+    "severe": {"stripe_beta": 15},  # 强烈条纹
+    "extreme": {"stripe_beta": 25}  # 极度干扰
+}
 
-    S_noise = np.tile(noise_col, (im.shape[0], 1)) # H W
 
-    S_noise = np.stack([S_noise, S_noise, S_noise], axis=2) # H W 3
+# ================= 2. 条纹噪声函数 =================
 
-    return im+1*S_noise
+def add_stripe(img, level=None):
+    """
+    添加红外竖直条纹噪声 (Fixed Pattern Noise).
 
-# 处理文件夹中的所有图片
-input_folder = ''
-output_folder = ''
+    参数:
+        img: 输入图像 (BGR 3通道, uint8)
+        level:
+            - None: 默认为 'moderate'
+            - 'random': 按概率随机选择
+            - 指定字符串: 'clean', 'slight', ...
 
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder)
+    返回:
+        numpy.ndarray: 处理后的图像 (uint8)
+    """
 
-for filename in os.listdir(input_folder):
-    if filename.endswith('.jpg') or filename.endswith('.png'):
-        input_path = os.path.join(input_folder, filename)
-        output_path = os.path.join(output_folder, filename)
-        enhanced_image = add_stripe(input_path)
-        cv2.imwrite(output_path, enhanced_image)
+    # --- A. 确定等级 ---
+    if level is None:
+        selected_level = "moderate"
+    elif level == "random":
+        selected_level = np.random.choice(LEVEL_KEYS, p=LEVEL_PROBS)
+    else:
+        if level not in DEGRADATION_LEVELS:
+            raise ValueError(f"未知的退化等级: {level}")
+        selected_level = level
 
-print("处理完成。")
+    # --- B. 获取参数 ---
+    # 注意：这里假设 DEGRADATION_LEVELS 字典中一定包含 stripe_beta 键
+    params = DEGRADATION_LEVELS[selected_level]
+    beta = params.get("stripe_beta", 0)  # 使用 .get 防止键不存在报错
+
+    # 如果强度 <= 0，直接返回原图
+    if beta <= 0:
+        return img
+
+    # --- C. 生成噪声 ---
+    h, w = img.shape[:2]
+
+    # 1. 生成一维竖直条纹基准 (只在宽度方向随机)
+    noise_col = np.random.normal(0, beta, w)
+
+    # 2. 沿高度方向复制，形成 (H, W) 的条纹图
+    S_noise = np.tile(noise_col, (h, 1))
+
+    # 3. 适配 3通道图像 (BGR)
+    # 因为输入是 cv2 读取的 3通道图，需要把噪声叠成 3层
+    if img.ndim == 3:
+        S_noise = np.stack([S_noise] * 3, axis=2)
+
+    # --- D. 叠加与截断 ---
+    # 转 float32 防止溢出 (uint8 加法会回卷)
+    noisy_img = img.astype(np.float32) + S_noise
+
+    # 截断回 0-255 并转 uint8
+    noisy_img = np.clip(noisy_img, 0, 255).astype(np.uint8)
+
+    return noisy_img

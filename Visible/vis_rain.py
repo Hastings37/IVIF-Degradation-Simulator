@@ -1,129 +1,127 @@
-import cv2
 import numpy as np
-from tqdm import tqdm
+import cv2
+import os
 
-def get_noise(img, value=10):
-    '''
-    #生成噪声图像
-    >>> 输入： img图像
-        value= 大小控制雨滴的多少
-    >>> 返回图像大小的模糊噪声图像
-    '''
+# ================= 1. 全局配置区域 =================
 
-    noise = np.random.uniform(0, 256, img.shape[0:2]) # HW 维度的噪声图像；
-    # 控制噪声水平，取浮点数，只保留最大的一部分作为噪声
+LEVEL_KEYS = ["clean", "slight", "moderate", "severe", "extreme"]
+LEVEL_PROBS = [0.17, 0.22, 0.33, 0.28, 0.0]
+
+# 统一参数字典
+# 统一参数字典 (雨天参数 - Extreme 已调小)
+DEGRADATION_LEVELS = {
+    "clean": {
+        "rain_value": 0, "rain_length": 0, "rain_alpha": 1.0, "rain_width": 0
+    },
+    "slight": {
+        "rain_value": 30, "rain_length": 10, "rain_alpha": 0.9, "rain_width": 0.5
+    },
+    "moderate": {
+        "rain_value": 100, "rain_length": 25, "rain_alpha": 0.8, "rain_width": 1
+    },
+    "severe": {
+        "rain_value": 150, "rain_length": 45, "rain_alpha": 0.7, "rain_width": 1.5
+    },
+    "extreme": {
+        # value: 从 250 降到 200 (密度降低)
+        # length: 从 60 降到 50 (雨丝变短)
+        # alpha: 从 0.55 提至 0.6 (原图更清晰，遮挡减少)
+        # width: 保持 2 (比 severe 略粗，体现暴雨感)
+        "rain_value": 200, "rain_length": 50, "rain_alpha": 0.6, "rain_width": 2
+    }
+}
+
+
+# ================= 2. 辅助功能函数 =================
+
+def _get_rain_noise(img, value):
+    """生成初始的随机噪点图"""
+    noise = np.random.uniform(0, 256, img.shape[0:2])
     v = value * 0.01
     noise[np.where(noise < (256 - v))] = 0
 
-    # 噪声做初次模糊
     k = np.array([[0, 0.1, 0],
                   [0.1, 8, 0.1],
                   [0, 0.1, 0]])
-
     noise = cv2.filter2D(noise, -1, k)
     return noise
 
 
-def rain_blur(noise, length=10, angle=0, w=1):
-    '''
-    将噪声加上运动模糊,模仿雨滴
+def _apply_rain_blur(noise, length, angle, w):
+    """将噪点拉伸成雨滴"""
+    if length <= 0:
+        return noise
 
-    >>>输入
-    noise：输入噪声图，shape = img.shape[0:2]
-    length: 对角矩阵大小，表示雨滴的长度
-    angle： 倾斜的角度，逆时针为正
-    w:      雨滴大小 宽度准确来说是；
-
-    >>>输出带模糊的噪声
-
-    '''
-
-    # 这里由于对角阵自带45度的倾斜，逆时针为正，所以加了-45度的误差，保证开始为正
+    # 生成旋转矩阵
     trans = cv2.getRotationMatrix2D((length / 2, length / 2), angle - 45, 1 - length / 100.0)
-    dig = np.diag(np.ones(length))  # 生成对焦矩阵
-    k = cv2.warpAffine(dig, trans, (length, length))  # 生成模糊核
-    k = cv2.GaussianBlur(k, (w, w), 0)  # 高斯模糊这个旋转后的对角核，使得雨有宽度
 
-    # k = k / length                         #是否归一化
+    # 生成对角矩阵
+    dig = np.diag(np.ones(length))
 
-    blurred = cv2.filter2D(noise, -1, k)  # 用刚刚得到的旋转后的核，进行滤波
+    # 旋转模糊核
+    k = cv2.warpAffine(dig, trans, (length, length))
 
-    # 转换到0-255区间
+    # 【关键修复】处理雨滴粗细 w
+    # 1. 强制转为 int (处理 0.5 这种情况)
+    w = int(w)
+    # 2. 确保宽度至少为 1 (防止 int(0.5) -> 0 导致错误)
+    if w < 1:
+        w = 1
+
+    # 3. 确保是奇数 (GaussianBlur 要求核大小为奇数)
+    w_kernel = w if w % 2 == 1 else w + 1
+
+    # 对核进行高斯模糊 (注意：这里传入的一定是整数了)
+    k = cv2.GaussianBlur(k, (w_kernel, w_kernel), 0)
+
+    # 滤波
+    blurred = cv2.filter2D(noise, -1, k)
+
     cv2.normalize(blurred, blurred, 0, 255, cv2.NORM_MINMAX)
-    blurred = np.array(blurred, dtype=np.uint8)
-    return blurred
+    return np.array(blurred, dtype=np.uint8)
 
 
-def alpha_rain(rain, img, beta=0.8):
-    # 输入雨滴噪声和图像
-    # beta = 0.8   #results weight
-    # 显示下雨效果
+# ================= 3. 主调用函数 =================
 
-    # expand dimensin
-    # 将二维雨噪声扩张为三维单通道
-    # 并与图像合成在一起形成带有alpha通道的4通道图像
-    rain = np.expand_dims(rain, 2)
-    rain_effect = np.concatenate((img, rain), axis=2)  # add alpha channel
+def add_rain(img, level=None):
+    """
+    添加雨天效果 (Rain).
+    """
 
-    rain_result = img.copy()  # 拷贝一个掩膜 .astype() np.ndarray 数据类型的转换；
-    rain = np.array(rain, dtype=np.float32)  # 数据类型变为浮点数，后面要叠加，防止数组越界要用32位
-    rain_result[:, :, 0] = rain_result[:, :, 0] * (255 - rain[:, :, 0]) / 255.0 + beta * rain[:, :, 0] # beta 用来控制雨滴的亮度情况；
-    rain_result[:, :, 1] = rain_result[:, :, 1] * (255 - rain[:, :, 0]) / 255 + beta * rain[:, :, 0] # 后面这个就是对应的雨滴原始内容；
-    rain_result[:, :, 2] = rain_result[:, :, 2] * (255 - rain[:, :, 0]) / 255 + beta * rain[:, :, 0]
-    # 对每个通道先保留雨滴噪声图对应的黑色（透明）部分，再叠加白色的雨滴噪声部分（有比例因子）
+    # --- A. 确定等级 ---
+    if level is None:
+        selected_level = "moderate"
+    elif level == "random":
+        selected_level = np.random.choice(LEVEL_KEYS, p=LEVEL_PROBS)
+    else:
+        if level not in DEGRADATION_LEVELS:
+            raise ValueError(f"未知的退化等级: {level}")
+        selected_level = level
 
-    cv2.imshow('rain_effct_result', rain_result)
-    cv2.waitKey()
-    cv2.destroyAllWindows()
+    # --- B. 获取参数 ---
+    params = DEGRADATION_LEVELS[selected_level]
+    value = params["rain_value"]
+    length = params["rain_length"]
+    alpha = params["rain_alpha"]
+    width = params["rain_width"]
 
+    # Clean 或 无雨滴 时直接返回
+    if value <= 0:
+        return img
 
-def add_rain(rain, img, alpha=0.9):
-    # 输入雨滴噪声和图像
-    # alpha：原图比例因子
-    # 显示下雨效果
+    # --- C. 随机角度生成 ---
+    angle = np.random.randint(-45, -14)
 
-    # chage rain into  3-dimenis
-    # 将二维rain噪声扩张为与原图相同的三通道图像
-    rain = np.expand_dims(rain, 2)
-    rain = np.repeat(rain, 3, 2)
+    # --- D. 生成雨滴层 ---
+    noise = _get_rain_noise(img, value)
+    rain_layer = _apply_rain_blur(noise, length, angle, width)
 
-    # 加权合成新图
-    result = cv2.addWeighted(img, alpha, rain, 1 - alpha, 1) # 原始图像和雨滴图像内容加权起来得到的结果；
-    cv2.imshow('rain_effct', result)
-    cv2.waitKey()
-    cv2.destroyWindow('rain_effct')
+    # 假设输入 img 是 BGR (H, W, 3)
+    if img.ndim == 3:
+        rain_layer = np.expand_dims(rain_layer, 2)
+        rain_layer = np.repeat(rain_layer, 3, 2)
 
+    # --- E. 图像融合 ---
+    result = cv2.addWeighted(img, alpha, rain_layer, 1 - alpha, 0)
 
-import os
-def add_rain_folder(input_folder, output_folder, alpha=0.85, beta=0.8, value=500, length=50, angle=-30, w=3):
-    # 创建输出文件夹
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-    file_bar = tqdm(os.listdir(input_folder))
-    # 处理文件夹中的所有图像
-    for filename in file_bar:
-        if filename.endswith('.png') or filename.endswith('.jpg') or filename.endswith('.jpeg'):
-            input_path = os.path.join(input_folder, filename)
-            name, ext = os.path.splitext(filename)
-            # output_path = os.path.join(output_folder, name + '_Rain' + ext)
-            output_path = os.path.join(output_folder, filename)
-            add_rain_to_image(input_path, output_path, alpha, beta, value, length, angle, w)       
-            file_bar.set_description("{} |".format(filename))
-
-
-def add_rain_to_image(input_path, output_path, alpha=0.85, beta=0.6, value=500, length=30, angle=-30, w=3):
-    img = cv2.imread(input_path)
-    noise = get_noise(img, value)
-    rain = rain_blur(noise, length, angle, w)
-    rain = np.expand_dims(rain, 2)
-    rain = np.repeat(rain, 3, 2)
-    result = cv2.addWeighted(img, alpha, rain, 1 - alpha, beta)
-    cv2.imwrite(output_path, result)
-
-
-if __name__ == '__main__':
-    input_folder = ''
-    output_folder = ''
-
-    # 处理文件夹中的所有图像
-    add_rain_folder(input_folder, output_folder)
+    return result

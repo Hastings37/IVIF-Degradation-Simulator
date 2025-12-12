@@ -1,64 +1,89 @@
-import os
-import cv2
 import numpy as np
-from tqdm import tqdm
-def add_gaussian_noise(image, mean=0, std=20):
+import cv2
+import os
+
+# ================= 全局配置区域 =================
+
+LEVEL_KEYS = ["clean", "slight", "moderate", "severe", "extreme"]
+LEVEL_PROBS = [0.17, 0.22, 0.33, 0.28, 0.0]
+
+# 统一参数字典
+DEGRADATION_LEVELS = {
+    "clean":    {
+        "gaussian_std": 0,  "poisson_val": None, "sp_prob": 0
+    },
+    "slight":   {
+        "gaussian_std": 5,  "poisson_val": 150,  "sp_prob": 0.0001
+    },
+    "moderate": {
+        "gaussian_std": 15, "poisson_val": 80,   "sp_prob": 0.0005
+    },
+    "severe":   {
+        "gaussian_std": 25, "poisson_val": 50,   "sp_prob": 0.002
+    },
+    "extreme":  {
+        "gaussian_std": 35,
+        "poisson_val": 30,
+        "sp_prob": 0.005
+    }
+}
+
+
+def add_noise(img, level=None):
     """
-    Add Gaussian noise to the image.
-
-    Parameters:
-        image: Input image.
-        mean: Mean of the Gaussian distribution.
-        std: Standard deviation of the Gaussian distribution.
-
-    Returns:
-        Noisy image.
+    添加混合噪声 (高斯 -> 泊松 -> 椒盐).
     """
-    noise = np.random.normal(mean, std, image.shape)
-    noisy_image = np.clip(image + noise, 0, 255).astype(np.uint8)
-    return noisy_image
 
-def add_poisson_noise(image):
-    """
-    Add Poisson noise to the image.
+    # --- 1. 确定等级 ---
+    if level is None:
+        selected_level = "moderate"
+    elif level == "random":
+        selected_level = np.random.choice(LEVEL_KEYS, p=LEVEL_PROBS)
+    else:
+        if level not in DEGRADATION_LEVELS:
+            raise ValueError(f"未知的退化等级: {level}")
+        selected_level = level
 
-    Parameters:
-        image: Input image.
+    # --- 2. 获取参数 ---
+    params = DEGRADATION_LEVELS[selected_level]
 
-    Returns:
-        Noisy image.
-    """
-    #value = 80
-    value = np.random.randint(70, 91)
-    noisy_image = np.random.poisson(image / 255.0 * value) / value * 255
-    noisy_image = np.clip(noisy_image, 0, 255).astype(np.uint8)
-    return noisy_image
+    # Clean 模式直接返回
+    if selected_level == "clean":
+        return img
 
+    # --- 3. 准备数据 (转float防止溢出) ---
+    noisy = img.astype(np.float32)
 
+    # --- 4. 添加高斯噪声 (Gaussian) ---
+    std = params["gaussian_std"]
+    if std > 0:
+        mean = 0
+        noise_g = np.random.normal(mean, std, noisy.shape)
+        noisy = noisy + noise_g
 
-# Input and output directories
-input_dir = ''
-output_dir = ''
+    # --- 5. 添加泊松噪声 (Poisson) ---
+    val = params["poisson_val"]
+    if val is not None:
+        noisy_temp = np.clip(noisy, 0, 255)
+        noisy = np.random.poisson(noisy_temp / 255.0 * val) / val * 255
 
-# Create output directory if not exists
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
+    # --- 6. 截断并转回 uint8 (为椒盐做准备) ---
+    noisy = np.clip(noisy, 0, 255).astype(np.uint8)
 
-# Loop through all image files in the input directory
-file_bar = tqdm(os.listdir(input_dir))
-for filename in file_bar:
-    if filename.endswith('.png') or filename.endswith('.jpg'):  # Adjust extensions as needed
-        # Load image
-        image_path = os.path.join(input_dir, filename)
-        image = cv2.imread(image_path)
-        # Add noise
-        noisy_image_gaussian = add_gaussian_noise(image)
-        noisy_image_poisson = add_poisson_noise(noisy_image_gaussian)
-        #noisy_image_salt_pepper = add_salt_and_pepper_noise(noisy_image_poisson)
-        # Save noisy image
-        name, ext = os.path.splitext(filename)
-        output_path = os.path.join(output_dir, name + '_RN' + ext)
-        output_path = os.path.join(output_dir, filename)
-        cv2.imwrite(output_path, noisy_image_poisson)
-        file_bar.set_description(f"Processed {filename}")
-        # print(f"Noise added to {filename} and saved to {output_path}")
+    # --- 7. 添加椒盐噪声 (Salt & Pepper) ---
+    prob = params["sp_prob"]
+    if prob > 0:
+        # 【修正重点】：
+        # 1. 只需要生成二维的随机矩阵 (H, W)，不需要变成 (H, W, 1)
+        # 2. NumPy 会自动把二维掩码应用到三维图像的所有通道上
+        rnd = np.random.rand(*noisy.shape[:2])
+
+        # 椒噪声 (黑点, 0)
+        # 这里的赋值会自动广播：如果 noisy 是 (H, W, 3)，
+        # 掩码为 True 的位置，其 RGB 三个通道都会被设为 0
+        noisy[rnd < (prob / 2)] = 0
+
+        # 盐噪声 (白点, 255)
+        noisy[rnd > (1 - prob / 2)] = 255
+
+    return noisy
